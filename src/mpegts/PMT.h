@@ -64,7 +64,7 @@ class PMT :
 		// =========================================================================
 	public:
 
-		virtual void clear() final;
+		virtual void clear() noexcept final;
 
 		// =========================================================================
 		// -- base::XMLSupport -----------------------------------------------------
@@ -84,25 +84,25 @@ class PMT :
 
 		void parse(FeID id);
 
-		mpegts::TSData getProgramInfo() const {
+		mpegts::TSData getProgramInfo() const noexcept {
 			return _progInfo;
 		}
 
-		uint16_t getProgramNumber() const {
+		uint16_t getProgramNumber() const noexcept {
 			return _programNumber;
 		}
 
 		int parsePCRPid();
 
-		int getPCRPid() const {
+		int getPCRPid() const noexcept {
 			return _pcrPID;
 		}
 
-		std::vector<ECMData> getECMPIDs() const {
-			return _ecmPID;
+		std::vector<ECMData> getECMPIDs() const noexcept {
+			return _pmtData.ecmPID;
 		}
 
-		bool isReadySend() const {
+		bool isReadySend() const noexcept {
 			if (isCollected() && !_send) {
 				_send = true;
 				return true;
@@ -121,13 +121,23 @@ class PMT :
 			int provid;
 		};
 
+		struct ESData {
+			int pid;
+			int streamType;
+		};
+
+		struct PMTData {
+			int pid;
+			std::vector<ECMData> ecmPID;
+			std::vector<ESData>  esPID;
+		};
+
 	private:
 
 		mpegts::TSData _progInfo;
 		uint16_t _programNumber = 0;
 		int _pcrPID = 0;
-		std::vector<int> _elementaryPID;
-		std::vector<ECMData> _ecmPID;
+		PMTData _pmtData;
 		std::size_t _prgLength = 0;
 		mutable bool _send = false;
 };

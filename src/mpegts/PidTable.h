@@ -32,7 +32,7 @@ class PidTable {
 		// =========================================================================
 	public:
 
-		PidTable();
+		PidTable() noexcept;
 
 		virtual ~PidTable() = default;
 
@@ -42,24 +42,30 @@ class PidTable {
 	public:
 
 		/// Clear all PID data
-		void clear();
+		void clear() noexcept;
 
 		/// Reset that PID has changed
-		void resetPIDTableChanged();
+		void resetPIDTableChanged() noexcept {
+			_changed = false;
+		}
 
 		/// Check if the PID has changed
-		bool hasPIDTableChanged() const {
+		bool hasPIDTableChanged() const noexcept {
 			return _changed;
 		}
 
 		/// Get the amount of packet that were received of this pid
-		uint32_t getPacketCounter(int pid) const;
+		uint32_t getPacketCounter(const int pid) const noexcept {
+			return _data[pid].count;
+		}
 
 		/// Get the amount Continuity Counter Error of this pid
-		uint32_t getCCErrors(int pid) const;
+		uint32_t getCCErrors(const int pid) const noexcept {
+			return _data[pid].cc_error;
+		}
 
 		/// Get the total amount of Continuity Counter Error
-		uint32_t getTotalCCErrors() const {
+		uint32_t getTotalCCErrors() const noexcept {
 			return _totalCCErrors - _totalCCErrorsBegin;
 		}
 
@@ -67,40 +73,68 @@ class PidTable {
 		std::string getPidCSV() const;
 
 		/// Set the continuity counter for pid
-		void addPIDData(int pid, uint8_t cc);
+		void addPIDData(const int pid, const uint8_t cc) noexcept {
+			PidData &data = _data[pid];
+			++data.count;
+			if (data.cc == 0x80) {
+				data.cc = cc;
+				if (!_totalCCErrorsBeginSet) {
+					_totalCCErrorsBegin = _totalCCErrors;
+					_totalCCErrorsBeginSet = true;
+				}
+			} else if (data.cc != cc) {
+				++data.cc;
+				data.cc %= 0x10;
+				if (data.cc != cc) {
+					const uint8_t diff = (cc >= data.cc) ? (cc - data.cc) : ((0x10 - data.cc) + cc);
+					data.cc = cc;
+					data.cc_error += diff;
+					_totalCCErrors += diff;
+				}
+			}
+		}
 
 		/// Set pid used or not
-		void setPID(int pid, bool use);
+		void setPID(int pid, bool use) noexcept;
 
 		/// Check if this pid is opened
-		bool isPIDOpened(int pid) const {
+		bool isPIDOpened(const int pid) const noexcept {
 			return _data[pid].state == State::Opened;
 		}
 
 		/// Check if this pid should be closed
-		bool shouldPIDClose(int pid) const;
+		bool shouldPIDClose(const int pid) const noexcept {
+			return _data[pid].state == State::ShouldClose ||
+				_data[pid].state == State::ShouldCloseReopen;
+		}
 
 		/// Set that this pid is closed
-		void setPIDClosed(int pid);
+		void setPIDClosed(const int pid) noexcept;
 
 		/// Check if PID should be opened
-		bool shouldPIDOpen(int pid) const;
+		bool shouldPIDOpen(const int pid) const noexcept {
+			return _data[pid].state == State::ShouldOpen;
+		}
 
 		/// Set that this pid is opened
-		void setPIDOpened(int pid);
+		void setPIDOpened(const int pid) noexcept {
+			_data[pid].state = State::Opened;
+		}
 
 		/// Set all PID
-		void setAllPID(bool use);
+		void setAllPID(const bool use) noexcept {
+			setPID(ALL_PIDS, use);
+		}
 
 		/// Check if all PIDs (full Transport Stream) is on
-		bool isAllPID() const {
+		bool isAllPID() const noexcept {
 			return _data[ALL_PIDS].state == State::Opened;
 		}
 
 	protected:
 
 		/// Reset the pid data like counters etc.
-		void resetPidData(int pid);
+		void resetPidData(int pid) noexcept;
 
 		// =========================================================================
 		//  -- Data members --------------------------------------------------------
@@ -131,6 +165,7 @@ class PidTable {
 		};
 		uint32_t _totalCCErrors;
 		uint32_t _totalCCErrorsBegin;
+		bool _totalCCErrorsBeginSet;
 		bool _changed;
 		PidData _data[MAX_PIDS];
 };

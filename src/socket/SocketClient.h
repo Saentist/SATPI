@@ -63,7 +63,7 @@ class SocketClient :
 		}
 
 		/// Add HTTP message data
-		/// @param msg specifiet the message to set/add
+		/// @param msg specifies the message to set/add
 		void addMessage(const std::string &msg) {
 			_msg += msg;
 		}
@@ -76,6 +76,15 @@ class SocketClient :
 		/// Get the Raw HTTP message data
 		std::string getRawMessage() const {
 			return _msg;
+		}
+
+		/// Spoof HTTP message with given data header
+		/// @param header specifies the header to spoof/add to HTTP message
+		void spoofHeaderWith(const std::string &header) const {
+			const std::string::size_type n = _msg.find("\r\n\r\n");
+			if (n != std::string::npos) {
+				_msg.insert(n + 2, header);
+			}
 		}
 
 		/// Get the Method used for this HTTP message
@@ -188,7 +197,7 @@ class SocketClient :
 		// =====================================================================
 	private:
 
-		std::string _msg;
+		mutable std::string _msg;
 		std::string _protocolString;
 };
 

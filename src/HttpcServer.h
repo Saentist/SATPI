@@ -28,12 +28,14 @@
 FW_DECL_NS0(Stream);
 FW_DECL_NS0(StreamManager);
 
+FW_DECL_SP_NS1(output, StreamClient);
+
 /// HTTP Client Server
 class HttpcServer :
 	public TcpSocket {
 	private:
-		static const char *HTML_BODY_WITH_CONTENT;
-		static const char *HTML_BODY_NO_CONTENT;
+		static const char* HTML_BODY_WITH_CONTENT;
+		static const char* HTML_BODY_NO_CONTENT;
 
 		static const std::string HTML_PROTOCOL_RTSP_VERSION;
 		static const std::string HTML_PROTOCOL_HTTP_VERSION;
@@ -66,7 +68,7 @@ class HttpcServer :
 			StreamManager &streamManager,
 			const std::string &bindIPAddress);
 
-		virtual ~HttpcServer();
+		virtual ~HttpcServer() = default;
 
 		/// Call this to initialize, setup and start this server
 		virtual void initialize(
@@ -93,18 +95,6 @@ class HttpcServer :
 		virtual bool methodPost(SocketClient &UNUSED(client)) {
 			return false;
 		}
-
-		/// RTSP Method
-		virtual void methodSetup(const Stream &UNUSED(stream), int UNUSED(clientID), std::string &UNUSED(htmlBody)) {}
-
-		/// RTSP Method
-		virtual void methodPlay(const Stream &UNUSED(stream), int UNUSED(clientID), std::string &UNUSED(htmlBody)) {}
-
-		/// RTSP Method
-		virtual void methodTeardown(const std::string &UNUSED(sessionID), int UNUSED(cseq), std::string &UNUSED(htmlBody)) {}
-
-		/// RTSP Method
-		virtual void methodOptions(const std::string &UNUSED(sessionID), int UNUSED(cseq), std::string &UNUSED(htmlBody)) {}
 
 		/// RTSP Method
 		virtual void methodDescribe(const std::string &UNUSED(sessionID), int UNUSED(cseq), FeIndex UNUSED(index), std::string &UNUSED(htmlBody)) {}

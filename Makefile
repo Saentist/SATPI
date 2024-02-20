@@ -12,15 +12,29 @@ CXX ?= $(CXXPREFIX)g++$(CXXSUFFIX)
 RESULT_HAS_NP_FUNCTIONS := $(shell $(CXX) -o npfunc checks/npfunc.cpp -pthread 2> /dev/null ; echo $$? ; rm -rf npfunc)
 RESULT_HAS_ATOMIC_FUNCTIONS := $(shell $(CXX) -o atomic checks/atomic.cpp 2> /dev/null ; echo $$? ; rm -rf atomic)
 RESULT_HAS_BACKTRACE_FUNCTIONS := $(shell $(CXX) -o backtrace checks/backtrace.cpp 2> /dev/null ; echo $$? ; rm -rf backtrace)
+RESULT_HAS_SYS_DVBS2X := $(shell $(CXX) -o sysdvb2sx checks/sysdvb2sx.cpp 2> /dev/null ; echo $$? ; rm -rf sysdvb2sx)
+RESULT_HAS_STRING_VIEW := $(shell $(CXX) -std=c++17 -o string_view checks/string_view.cpp -pthread 2> /dev/null ; echo $$? ; rm -rf string_view)
 
 # Includes needed for proper compilation
 INCLUDES +=
 
 LDFLAGS += $(CPU_FLAGS)
 CFLAGS += $(CPU_FLAGS)
+CFLAGS_OPT += $(CPU_FLAGS)
 
 # Libraries needed for linking
 LDFLAGS += -pthread -lrt
+
+# Enable Backport mode (ancient compilers previous to C++17)
+ifeq "$(RESULT_HAS_STRING_VIEW)" "1"
+	CFLAGS     += -isystem nonstd -DNEED_BACKPORT
+  CFLAGS_OPT += -isystem nonstd -DNEED_BACKPORT
+endif
+
+ifeq "$(CPP11)" "yes"
+	CFLAGS     += -isystem nonstd -DNEED_BACKPORT
+  CFLAGS_OPT += -isystem nonstd -DNEED_BACKPORT
+endif
 
 # RESULT_HAS_ATOMIC_FUNCTIONS = 1 if compile fails
 ifeq "$(RESULT_HAS_ATOMIC_FUNCTIONS)" "1"
@@ -29,31 +43,55 @@ endif
 
 # RESULT_HAS_BACKTRACE_FUNCTIONS = 1 if compile fails
 ifeq "$(RESULT_HAS_BACKTRACE_FUNCTIONS)" "1"
-  CFLAGS += -DHAS_NO_BACKTRACE_FUNCTIONS
+  CFLAGS     += -DHAS_NO_BACKTRACE_FUNCTIONS
+  CFLAGS_OPT += -DHAS_NO_BACKTRACE_FUNCTIONS
+endif
+
+# RESULT_HAS_SYS_DVBS2X = 1 if compile fails
+ifeq "$(RESULT_HAS_SYS_DVBS2X)" "1"
+  CFLAGS     += -DDEFINE_SYS_DVBS2X
+  CFLAGS_OPT += -DDEFINE_SYS_DVBS2X
+endif
+
+# RESULT_HAS_NP_FUNCTIONS = 0 if compile is succesfull which means NP are OK
+ifeq "$(RESULT_HAS_NP_FUNCTIONS)" "0"
+  CFLAGS     += -DHAS_NP_FUNCTIONS
+  CFLAGS_OPT += -DHAS_NP_FUNCTIONS
 endif
 
 # Set Compiler Flags
-CFLAGS += -I src -std=c++17 -Werror=vla -Wall -Wextra -Winit-self -Wshadow -pthread $(INCLUDES)
+CFLAGS     += -I src -std=c++17 -Werror=vla -Wall -Wextra -Winit-self -Wshadow -pthread $(INCLUDES)
+CFLAGS_OPT += -I src -std=c++17 -Werror=vla -Wall -Wextra -Winit-self -Wshadow -pthread $(INCLUDES)
 
 # Build "debug", "release" or "simu"
 ifeq "$(BUILD)" "debug"
   # "Debug" build - no optimization, with debugging symbols
-  CFLAGS += -O0 -g3 -gdwarf-2 -DDEBUG -fstack-protector-all -Wswitch-default
-  LDFLAGS += -rdynamic
+  CFLAGS     += -O0 -g3 -gdwarf-2 -DDEBUG -DDEBUG_LOG -fstack-protector-all -Wswitch-default
+  CFLAGS_OPT += -O3 -s -DNDEBUG -DDEBUG_LOG
+  LDFLAGS    += -rdynamic
 else ifeq "$(BUILD)" "debug1"
   # "Debug" build - with optimization, with debugging symbols
-  CFLAGS += -O2 -g3 -DDEBUG -fstack-protector-all -Wswitch-default
-  LDFLAGS += -rdynamic
+  CFLAGS     += -O0 -g3 -gdwarf-2 -DDEBUG -DDEBUG_LOG -fstack-protector-all -Wswitch-default
+  CFLAGS_OPT += -O0 -g3 -gdwarf-2 -DDEBUG -DDEBUG_LOG -fstack-protector-all -Wswitch-default
+  LDFLAGS    += -rdynamic
 else ifeq "$(BUILD)" "speed"
-  # "Debug" build - with optimization, with debugging symbols
-  CFLAGS += -Os -s -DNDEBUG
+  # "Debug" build - with optimization, without debugging symbols
+  CFLAGS     += -Os -s -DNDEBUG
+  CFLAGS_OPT += -Os -s -DNDEBUG
 else ifeq "$(BUILD)" "simu"
   # "Debug Simu" build - no optimization, with debugging symbols
-  CFLAGS += -O0 -g3 -DDEBUG -DSIMU -fstack-protector-all
-  LDFLAGS += -rdynamic
+  CFLAGS     += -O0 -g3 -DDEBUG -DDEBUG_LOG -DSIMU -fstack-protector-all
+  CFLAGS_OPT += -O3 -s  -DNDEBUG -DDEBUG_LOG
+  LDFLAGS    += -rdynamic
+else ifeq "$(BUILD)" "static"
+  CFLAGS     += -O2 -s -DNDEBUG
+  CFLAGS_OPT += -O3 -s -DNDEBUG
+  LDFLAGS    += -static
 else
   # "Release" build - optimization, and no debug symbols
-  CFLAGS += -O2 -s -DNDEBUG
+  CFLAGS     += -O2 -s -DNDEBUG
+  CFLAGS_OPT += -O3 -s -DNDEBUG
+  LDFLAGS    += -rdynamic
 endif
 
 # List of source to be compiled
@@ -68,7 +106,6 @@ SOURCES = Version.cpp \
 	main.cpp \
 	Satpi.cpp \
 	Stream.cpp \
-	StreamClient.cpp \
 	StreamManager.cpp \
 	StringConverter.cpp \
 	TransportParamVector.cpp \
@@ -91,6 +128,7 @@ SOURCES = Version.cpp \
 	input/dvb/delivery/DVBC.cpp \
 	input/dvb/delivery/DVBS.cpp \
 	input/dvb/delivery/DVBT.cpp \
+	input/dvb/delivery/FBC.cpp \
 	input/dvb/delivery/Lnb.cpp \
 	input/file/TSReader.cpp \
 	input/file/TSReaderData.cpp \
@@ -108,14 +146,10 @@ SOURCES = Version.cpp \
 	mpegts/PMT.cpp \
 	mpegts/SDT.cpp \
 	mpegts/TableData.cpp \
-	output/StreamThreadBase.cpp \
-	output/StreamThreadHttp.cpp \
-	output/StreamThreadRtcpBase.cpp \
-	output/StreamThreadRtcp.cpp \
-	output/StreamThreadRtcpTcp.cpp \
-	output/StreamThreadRtp.cpp \
-	output/StreamThreadRtpTcp.cpp \
-	output/StreamThreadTSWriter.cpp \
+	output/StreamClient.cpp \
+	output/StreamClientOutputHttp.cpp \
+	output/StreamClientOutputRtp.cpp \
+	output/StreamClientOutputRtpTcp.cpp \
 	socket/HttpcSocket.cpp \
 	socket/TcpSocket.cpp \
 	socket/SocketAttr.cpp \
@@ -130,31 +164,20 @@ endif
 
 # Add dvbcsa ?
 ifeq "$(LIBDVBCSA)" "yes"
-  LDFLAGS += -ldvbcsa
-#  CFLAGS  += -DUSE_DEPRECATED_DVBAPI
-  CFLAGS  += -DLIBDVBCSA
-  SOURCES += decrypt/dvbapi/Client.cpp
-  SOURCES += decrypt/dvbapi/ClientProperties.cpp
-  SOURCES += decrypt/dvbapi/Keys.cpp
-  SOURCES += input/dvb/Frontend_DecryptInterface.cpp
-# Need to build with ICAM support
-ifeq "$(ICAM)" "yes"
-  CFLAGS += -DICAM
-endif
+  LDFLAGS    += -ldvbcsa -ldl
+#  CFLAGS     += -DUSE_DEPRECATED_DVBAPI
+  CFLAGS     += -DLIBDVBCSA
+  CFLAGS_OPT += -DLIBDVBCSA
+  SOURCES    += decrypt/dvbapi/Client.cpp
+  SOURCES    += decrypt/dvbapi/ClientProperties.cpp
+  SOURCES    += decrypt/dvbapi/Keys.cpp
+  SOURCES    += input/dvb/Frontend_DecryptInterface.cpp
 endif
 
 # Add dvbca ?
 ifeq "$(DVBCA)" "yes"
   CFLAGS  += -DADDDVBCA
   SOURCES += decrypt/dvbca/DVBCA.cpp
-endif
-
-# Has np functions
-# RESULT_HAS_NP_FUNCTIONS = 0 if compile is succesfull which means NP are OK
-ifeq "$(HAS_NP_FUNCTIONS)" "yes"
-  CFLAGS  += -DHAS_NP_FUNCTIONS
-else ifeq "$(RESULT_HAS_NP_FUNCTIONS)" "0"
-  CFLAGS  += -DHAS_NP_FUNCTIONS
 endif
 
 # Need to build for Enigma support
@@ -216,9 +239,18 @@ $(EXECUTABLE): $(OBJECTS) $(HEADERS)
 # A pattern rule is used to build objects from 'cpp' files
 # $< represents the first item in the dependencies list
 # $@ represents the targetname
+$(OBJ_DIR)/mpegts/%.o: $(SRC_DIR)/mpegts/%.cpp $(HEADERS)
+	@mkdir -p $(@D)
+	$(CXX) -c $(CFLAGS_OPT) $< -o $@
+
+$(OBJ_DIR)/decrypt/dvbapi/%.o: $(SRC_DIR)/decrypt/dvbapi/%.cpp $(HEADERS)
+	@mkdir -p $(@D)
+	$(CXX) -c $(CFLAGS_OPT) $< -o $@
+
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(HEADERS)
 	@mkdir -p $(@D)
 	$(CXX) -c $(CFLAGS) $< -o $@
+
 
 # Create debug versions
 debug:
@@ -226,6 +258,9 @@ debug:
 
 debug1:
 	$(MAKE) "BUILD=debug1" LIBDVBCSA=yes
+
+static:
+	$(MAKE) "BUILD=static"
 
 speed:
 	$(MAKE) "BUILD=speed" LIBDVBCSA=yes
@@ -255,8 +290,7 @@ help:
 	@echo "Help, use these command for building this project:"
 	@echo " - Make project clean                   :  make clean"
 	@echo " - Make debug version                   :  make debug"
-	@echo " - Make debug version with DVBAPI       :  make debug LIBDVBCSA=yes"
-	@echo " - Make debug version with DVBAPI(ICAM) :  make debug LIBDVBCSA=yes ICAM=yes"
+	@echo " - Make debug version with DVBAPI(ICAM) :  make debug LIBDVBCSA=yes"
 	@echo " - Make debug version for ENIGMA        :  make debug ENIGMA=yes"
 	@echo " - Make production version with DVBAPI  :  make LIBDVBCSA=yes"
 	@echo " - Make production version with DVBAPI  :  make speed LIBDVBCSA=yes"

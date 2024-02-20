@@ -35,7 +35,7 @@ class PCR {
 		// =========================================================================
 	public:
 
-		PCR();
+		PCR() = default;
 
 		virtual ~PCR() = default;
 
@@ -46,7 +46,7 @@ class PCR {
 
 		/// This will check for 'adaptation field flag' and 'PCR field present' to
 		/// indicate this is an PCR table
-		static bool isPCRTableData(const unsigned char *data) {
+		static bool isPCRTableData(const unsigned char* data) {
 			return ((data[3] & 0x20) == 0x20 && (data[5] & 0x10) == 0x10);
 		}
 
@@ -56,7 +56,7 @@ class PCR {
 	public:
 
 		/// Collect Table data for tableID
-		void collectData(FeID id, const unsigned char *data);
+		void collectData(FeID id, const unsigned char* data);
 
 		std::int64_t getPCRDelta() const;
 
@@ -69,8 +69,8 @@ class PCR {
 		// =========================================================================
 	private:
 
-		std::uint64_t _pcrPrev;
-		std::int64_t _pcrDelta;
+		std::uint64_t _pcrPrev = 0;
+		std::int64_t _pcrDelta = 0;
 };
 
 }

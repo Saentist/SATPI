@@ -89,15 +89,19 @@ class TSReader :
 
 		virtual bool isDataAvailable() final;
 
-		virtual bool readTSPackets(mpegts::PacketBuffer &buffer, bool finalCall) final;
+		virtual bool readTSPackets(mpegts::PacketBuffer& buffer) final;
 
 		virtual bool capableOf(input::InputSystem msys) const final;
 
+		virtual bool capableToShare(const TransportParamVector& params) const final;
+
 		virtual bool capableToTransform(const TransportParamVector& params) const final;
+
+		virtual bool isLockedByOtherProcess() const final;
 
 		virtual bool monitorSignal(bool showStatus) final;
 
-		virtual bool hasDeviceDataChanged() const final;
+		virtual bool hasDeviceFrequencyChanged() const final;
 
 		virtual void parseStreamString(const TransportParamVector& params) final;
 

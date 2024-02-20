@@ -45,6 +45,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <base/StopWatch.h>
+
 namespace input::dvb {
 
 // =============================================================================
@@ -110,25 +112,25 @@ static void getAttachedFrontends(
 	// unused var
 	(void)path;
 
-	const std::string fe0 = StringConverter::stringFormat(FRONTEND.c_str(), 0, 0);
-	const std::string dvr0 = StringConverter::stringFormat(DVR.c_str(), 0, 0);
-	const std::string dmx0 = StringConverter::stringFormat(DMX.c_str(), 0, 0);
+	const std::string fe0 = StringConverter::stringFormat(FRONTEND.data(), 0, 0);
+	const std::string dvr0 = StringConverter::stringFormat(DVR.data(), 0, 0);
+	const std::string dmx0 = StringConverter::stringFormat(DMX.data(), 0, 0);
 	input::dvb::SpFrontend frontend0 = std::make_shared<input::dvb::Frontend>(0, appDataPath, fe0, dvr0, dmx0);
-	streamVector.push_back(std::make_shared<Stream>(frontend0, decrypt));
+	streamVector.push_back(Stream::makeSP(frontend0, decrypt));
 
-	const std::string fe1 = StringConverter::stringFormat(FRONTEND.c_str(), 1, 0);
-	const std::string dvr1 = StringConverter::stringFormat(DVR.c_str(), 1, 0);
-	const std::string dmx1 = StringConverter::stringFormat(DMX.c_str(), 1, 0);
+	const std::string fe1 = StringConverter::stringFormat(FRONTEND.data(), 1, 0);
+	const std::string dvr1 = StringConverter::stringFormat(DVR.data(), 1, 0);
+	const std::string dmx1 = StringConverter::stringFormat(DMX.data(), 1, 0);
 	input::dvb::SpFrontend frontend1 = std::make_shared<input::dvb::Frontend>(1, appDataPath, fe1, dvr1, dmx1);
-	streamVector.push_back(std::make_shared<Stream>(frontend1, decrypt));
+	streamVector.push_back(Stream::makeSP(frontend1, decrypt));
 #else
 	dirent **file_list;
-	const int n = scandir(path.c_str(), &file_list, nullptr, versionsort);
+	const int n = scandir(path.data(), &file_list, nullptr, versionsort);
 	if (n > 0) {
 		for (int i = 0; i < n; ++i) {
 			const std::string full_path = StringConverter::stringFormat("@#1/@#2", path, file_list[i]->d_name);
 			struct stat stat_buf;
-			if (stat(full_path.c_str(), &stat_buf) == 0) {
+			if (stat(full_path.data(), &stat_buf) == 0) {
 				switch (stat_buf.st_mode & S_IFMT) {
 					case S_IFCHR: // character device
 						if (strstr(file_list[i]->d_name, "frontend") != nullptr) {
@@ -136,17 +138,17 @@ static void getAttachedFrontends(
 							sscanf(file_list[i]->d_name, "frontend%d", &fe_nr);
 							int adapt_nr;
 							const std::string ADAPTER_TMP = startPath + "/adapter%d";
-							sscanf(path.c_str(), ADAPTER_TMP.c_str(), &adapt_nr);
+							sscanf(path.data(), ADAPTER_TMP.data(), &adapt_nr);
 
 							// Make new paths
-							const std::string fe = StringConverter::stringFormat(FRONTEND.c_str(), adapt_nr, fe_nr);
-							const std::string dvr = StringConverter::stringFormat(DVR.c_str(), adapt_nr, fe_nr);
-							const std::string dmx = StringConverter::stringFormat(DMX.c_str(), adapt_nr, fe_nr);
+							const std::string fe = StringConverter::stringFormat(FRONTEND.data(), adapt_nr, fe_nr);
+							const std::string dvr = StringConverter::stringFormat(DVR.data(), adapt_nr, fe_nr);
+							const std::string dmx = StringConverter::stringFormat(DMX.data(), adapt_nr, fe_nr);
 
 							// Make new frontend here
 							const StreamSpVector::size_type size = streamVector.size();
 							const input::dvb::SpFrontend frontend = std::make_shared<input::dvb::Frontend>(size, appDataPath, fe, dvr, dmx);
-							streamVector.push_back(std::make_shared<Stream>(frontend, decrypt));
+							streamVector.push_back(Stream::makeSP(frontend, decrypt));
 						}
 						break;
 					case S_IFDIR:
@@ -195,6 +197,10 @@ void Frontend::doAddToXML(std::string &xml) const {
 
 	ADD_XML_NUMBER_INPUT(xml, "dvrbuffer", _dvrBufferSizeMB, 0, MAX_DVR_BUFFER_SIZE);
 	ADD_XML_NUMBER_INPUT(xml, "waitOnLockTimeout", _waitOnLockTimeout, 0, MAX_WAIT_ON_LOCK_TIMEOUT);
+
+#ifdef LIBDVBCSA
+	_dvbapiData.addToXML(xml);
+#endif
 
 	// Channel
 	_frontendData.addToXML(xml);
@@ -251,7 +257,7 @@ bool Frontend::isDataAvailable() {
 	pfd.fd = _fd_dmx;
 	pfd.events = POLLIN;
 	pfd.revents = 0;
-	const int pollRet = ::poll(&pfd, 1, 180);
+	const int pollRet = ::poll(&pfd, 1, 100);
 	if (pollRet > 0) {
 		return (pfd.revents & POLLIN) == POLLIN;
 	} else if (pollRet < 0) {
@@ -262,13 +268,14 @@ bool Frontend::isDataAvailable() {
 	return false;
 }
 
-bool Frontend::readTSPackets(mpegts::PacketBuffer &buffer, const bool UNUSED(finalCall)) {
+bool Frontend::readTSPackets(mpegts::PacketBuffer& buffer) {
 	// try read maximum amount of bytes from DMX
 	const auto readSize = ::read(_fd_dmx, buffer.getWriteBufferPtr(), buffer.getAmountOfBytesToWrite());
 	if (readSize > 0) {
 		buffer.addAmountOfBytesWritten(readSize);
 		if (buffer.full()) {
 			_frontendData.getFilter().filterData(_feID, buffer, false);
+
 			return true;
 		}
 	} else if (readSize < 0) {
@@ -280,7 +287,7 @@ bool Frontend::readTSPackets(mpegts::PacketBuffer &buffer, const bool UNUSED(fin
 }
 
 bool Frontend::capableOf(const input::InputSystem system) const {
-	for (const input::dvb::delivery::UpSystem &deliverySystem : _deliverySystem) {
+	for (const input::dvb::delivery::UpSystem& deliverySystem : _deliverySystem) {
 		if (deliverySystem->isCapableOf(system)) {
 			return true;
 		}
@@ -288,9 +295,24 @@ bool Frontend::capableOf(const input::InputSystem system) const {
 	return false;
 }
 
+bool Frontend::capableToShare(const TransportParamVector& UNUSED(params)) const {
+	// @TODO: Check if the same "channel" is requested for sharing this frontend
+	//        maybe check if sharing is allowed
+	return false;
+}
+
 bool Frontend::capableToTransform(const TransportParamVector& params) const {
 	const input::InputSystem system = _transform.getTransformationSystemFor(params);
 	return capableOf(system);
+}
+
+bool Frontend::isLockedByOtherProcess() const {
+	int fd = ::open(_path_to_fe.data(), O_RDWR);
+	if (fd  < 0) {
+		return true;
+	}
+	CLOSE_FD(fd);
+	return false;
 }
 
 bool Frontend::monitorSignal(const bool showStatus) {
@@ -402,8 +424,8 @@ bool Frontend::monitorSignal(const bool showStatus) {
 #endif
 }
 
-bool Frontend::hasDeviceDataChanged() const {
-	return _frontendData.hasDeviceDataChanged();
+bool Frontend::hasDeviceFrequencyChanged() const {
+	return _frontendData.hasDeviceFrequencyChanged();
 }
 
 void Frontend::parseStreamString(const TransportParamVector& params) {
@@ -422,8 +444,8 @@ bool Frontend::update() {
 	base::StopWatch sw;
 	sw.start();
 	// Setup, tune and set PID Filters
-	if (_frontendData.hasDeviceDataChanged()) {
-		_frontendData.resetDeviceDataChanged();
+	if (_frontendData.hasDeviceFrequencyChanged()) {
+		_frontendData.resetDeviceFrequencyChanged();
 		_tuned = false;
 		// Close active PIDs
 		closeActivePIDFilters();
@@ -438,8 +460,8 @@ bool Frontend::update() {
 		return false;
 	}
 	updatePIDFilters();
-	const unsigned long time = sw.getIntervalMS();
-	SI_LOG_INFO("Frontend: @#1, Updating frontend (Finished in @#2 ms)", _feID, time);
+	const unsigned long time = sw.getIntervalUS();
+	SI_LOG_INFO("Frontend: @#1, Updating frontend (Finished in @#2 us)", _feID, time);
 	return true;
 }
 
@@ -448,7 +470,7 @@ bool Frontend::teardown() {
 	closeActivePIDFilters();
 	_tuned = false;
 	// Do teardown of frontends before closing FE
-	for (const input::dvb::delivery::UpSystem &deliverySystem : _deliverySystem) {
+	for (const input::dvb::delivery::UpSystem& deliverySystem : _deliverySystem) {
 		deliverySystem->teardown(_fd_fe);
 	}
 	closeDMX();
@@ -467,8 +489,9 @@ void Frontend::closeActivePIDFilters() {
 	_frontendData.getFilter().closeActivePIDFilters(_feID,
 		// closePid lambda function
 		[&](const int pid) {
-			if (::ioctl(_fd_dmx, DMX_REMOVE_PID, &pid) != 0) {
-				SI_LOG_PERROR("Frontend: @#1, DMX_REMOVE_PID: PID @#2", _feID, PID(pid));
+			uint16_t p = pid;
+			if (::ioctl(_fd_dmx, DMX_REMOVE_PID, &p) != 0) {
+				SI_LOG_PERROR("Frontend: @#1, DMX_REMOVE_PID: PID @#2", _feID, PID(p));
 				return false;
 			}
 			return true;
@@ -483,6 +506,7 @@ void Frontend::updatePIDFilters() {
 	_frontendData.getFilter().updatePIDFilters(_feID,
 		// openPid lambda function
 		[&](const int pid) {
+			uint16_t p = pid;
 			// Check if we have already a DMX open
 			if (_fd_dmx == -1) {
 				// try opening DMX, try again if fails
@@ -511,37 +535,38 @@ void Frontend::updatePIDFilters() {
 					if (offsetFile.is_open()) {
 						offsetFile >> offset;
 					}
-					int n = _feID.getID() - 1;
+					int n = DMX_SOURCE_FRONT0 + _index.getID();
 					if (::ioctl(_fd_dmx, DMX_SET_SOURCE, &n) != 0) {
 						SI_LOG_PERROR("Frontend: @#1, Failed to set DMX_SET_SOURCE with (Src: @#2 - Offset: @#3)", _feID, n, offset);
 						return false;
 					}
 					SI_LOG_INFO("Frontend: @#1, Set DMX_SET_SOURCE with (Src: @#2 - Offset: @#3)", _feID, n, offset);
 				}
-				struct dmx_pes_filter_params pesFilter;
-				pesFilter.pid      = pid;
+				struct dmx_pes_filter_params pesFilter{};
+				pesFilter.pid      = p;
 				pesFilter.input    = DMX_IN_FRONTEND;
 				pesFilter.output   = DMX_OUT_TSDEMUX_TAP;
 				pesFilter.pes_type = DMX_PES_OTHER;
 				pesFilter.flags    = DMX_IMMEDIATE_START;
 				if (::ioctl(_fd_dmx, DMX_SET_PES_FILTER, &pesFilter) != 0) {
-					SI_LOG_PERROR("Frontend: @#1, Failed to set DMX_SET_PES_FILTER for PID: @#2", _feID, PID(pid));
+					SI_LOG_PERROR("Frontend: @#1, Failed to set DMX_SET_PES_FILTER for PID: @#2", _feID, PID(p));
 					return false;
 				}
-			} else if (::ioctl(_fd_dmx, DMX_ADD_PID, &pid) != 0) {
-				SI_LOG_PERROR("Frontend: @#1, Failed to set DMX_ADD_PID for PID: @#2", _feID, PID(pid));
+			} else if (::ioctl(_fd_dmx, DMX_ADD_PID, &p) != 0) {
+				SI_LOG_PERROR("Frontend: @#1, Failed to set DMX_ADD_PID for PID: @#2", _feID, PID(p));
 				return false;
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			return true;
 		},
 		// closePid lambda function
 		[&](const int pid) {
-			if (::ioctl(_fd_dmx, DMX_REMOVE_PID, &pid) != 0) {
-				SI_LOG_PERROR("Frontend: @#1, DMX_REMOVE_PID: PID @#2", _feID, PID(pid));
+			uint16_t p = pid;
+			if (::ioctl(_fd_dmx, DMX_REMOVE_PID, &p) != 0) {
+				SI_LOG_PERROR("Frontend: @#1, DMX_REMOVE_PID: PID @#2", _feID, PID(p));
 				return false;
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			return true;
 		});
 }
@@ -726,7 +751,7 @@ void Frontend::setupFrontend() {
 }
 
 int Frontend::openFE(const std::string &path, const bool readonly) const {
-	const int fd = ::open(path.c_str(), (readonly ? O_RDONLY : O_RDWR) | O_NONBLOCK);
+	const int fd = ::open(path.data(), (readonly ? O_RDONLY : O_RDWR) | O_NONBLOCK);
 	if (fd  < 0) {
 		SI_LOG_PERROR("Frontend: @#1, Failed to open @#2", _feID, path);
 	}
@@ -741,7 +766,7 @@ void Frontend::closeFE() {
 }
 
 int Frontend::openDMX(const std::string &path) const {
-	const int fd = ::open(path.c_str(), O_RDWR | O_NONBLOCK);
+	const int fd = ::open(path.data(), O_RDWR | O_NONBLOCK);
 	if (fd < 0) {
 		SI_LOG_PERROR("Frontend: @#1, Failed to open @#2", _feID, path);
 	}
@@ -757,7 +782,7 @@ void Frontend::closeDMX() {
 
 bool Frontend::tune() {
 	const input::InputSystem delsys = _frontendData.getDeliverySystem();
-	for (input::dvb::delivery::UpSystem &system : _deliverySystem) {
+	for (input::dvb::delivery::UpSystem& system : _deliverySystem) {
 		if (system->isCapableOf(delsys)) {
 			return system->tune(_fd_fe, _frontendData);
 		}
@@ -800,12 +825,12 @@ bool Frontend::setupAndTune() {
 						_frontendData.setMonitorData(FE_HAS_LOCK, 100, 8, 0, 0);
 						SI_LOG_INFO("Frontend: @#1, Tuned and locked (FE status @#2)", _feID, HEX(status, 2));
 						break;
-					} else {
-						SI_LOG_PERROR("Frontend: @#1, FE_READ_STATUS", _feID);
 					}
 					if (i == 1) {
 						SI_LOG_INFO("Frontend: @#1, Not locked yet   (FE status @#2)...", _feID, HEX(status, 2));
 					}
+				} else {
+					SI_LOG_PERROR("Frontend: @#1, FE_READ_STATUS", _feID);
 				}
 				const unsigned long waitTime = sw.getIntervalMS();
 				if (waitTime > _waitOnLockTimeout) {

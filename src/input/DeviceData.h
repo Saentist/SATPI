@@ -103,10 +103,10 @@ class DeviceData :
 
 		/// Check the 'Channel Data changed' flag.
 		/// If changed we should update frontend
-		bool hasDeviceDataChanged() const;
+		bool hasDeviceFrequencyChanged() const;
 
 		/// Reset/clear the 'Channel Data changed' flag
-		void resetDeviceDataChanged();
+		void resetDeviceFrequencyChanged();
 
 		/// Get the current Delivery System
 		input::InputSystem getDeliverySystem() const;
@@ -128,8 +128,9 @@ class DeviceData :
 
 		/// General function to parse and update the pid list.
 		/// Using the request parameters "pids","addpids","delpids"
+		/// @param id
 		/// @param params
-		void parseAndUpdatePidsTable(const TransportParamVector& params);
+		void parseAndUpdatePidsTable(FeID id, const TransportParamVector& params);
 
 		int hasLock() const;
 
@@ -154,7 +155,7 @@ class DeviceData :
 
 		base::Mutex _mutex;
 
-		bool _changed;
+		bool _frequencyChanged;
 		input::InputSystem _delsys;
 		mpegts::Filter _filter;
 		mpegts::Generator _generator;

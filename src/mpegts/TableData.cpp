@@ -96,7 +96,7 @@ static uint32_t crc32Table[] = {
 //  -- Static member functions -------------------------------------------------
 // =============================================================================
 
-uint32_t TableData::calculateCRC32(const unsigned char *data, const std::size_t len) {
+uint32_t TableData::calculateCRC32(const unsigned char* data, const std::size_t len) noexcept {
 	uint32_t crc = 0xffffffff;
 	for(size_t i = 0; i < len; ++i) {
 		crc = (crc << 8) ^ crc32Table[((crc >> 24) ^ (data[i] & 0xff)) & 0xff];
@@ -108,14 +108,14 @@ uint32_t TableData::calculateCRC32(const unsigned char *data, const std::size_t 
 //  -- Other member functions --------------------------------------------------
 // =============================================================================
 
-void TableData::clear() {
+void TableData::clear() noexcept {
 	_numberOfSections = 0;
 	_currentSectionNumber = 0;
 	_collectingFinished = false;
 	_dataTable.clear();
 }
 
-const char* TableData::getTableTXT(const int tableID) const {
+const char* TableData::getTableTXT(const int tableID) const noexcept {
 	switch (tableID) {
 		case PAT_ID:
 			return "PAT";
@@ -148,7 +148,7 @@ const char* TableData::getTableTXT(const int tableID) const {
 }
 
 void TableData::collectData(const FeID id, const int tableID,
-		const unsigned char *data, const bool trace, const bool raw) {
+		const unsigned char* data, const bool trace, const bool raw) {
 	Data &currentTableData = _dataTable[_currentSectionNumber];
 	const std::size_t tableSize = currentTableData.data.size();
 	const bool payloadStart = (data[1] & 0x40) == 0x40;
@@ -184,7 +184,7 @@ void TableData::collectData(const FeID id, const int tableID,
 					if (raw) {
 						setCollected();
 					} else {
-						const unsigned char *crcData = currentTableData.data.c_str();
+						const unsigned char* crcData = currentTableData.data.data();
 						const uint32_t crc     = CRC(crcData, sectionLength);
 						const uint32_t calccrc = calculateCRC32(&crcData[5], sectionLength - 4 + 3);
 						if (calccrc == crc) {
@@ -217,7 +217,7 @@ void TableData::collectData(const FeID id, const int tableID,
 			}
 			// Check did we finish collecting Table Data
 			if (sectionLength <= (tableDataSize - 9)) { // 9 = Untill Table Section Length
-				const unsigned char *crcData = currentTableData.data.c_str();
+				const unsigned char* crcData = currentTableData.data.data();
 				const uint32_t crc     = CRC(crcData, sectionLength);
 				const uint32_t calccrc = calculateCRC32(&crcData[5], sectionLength - 4 + 3);
 				if (calccrc == crc) {
@@ -240,7 +240,7 @@ void TableData::collectData(const FeID id, const int tableID,
 	}
 }
 
-bool TableData::addData(const int tableID, const unsigned char *data,
+bool TableData::addData(const int tableID, const unsigned char* data,
 		const int length, const int pid, const int cc) {
 	Data &currentTableData = _dataTable[_currentSectionNumber];
 	currentTableData.tableID = tableID;
@@ -255,7 +255,7 @@ bool TableData::addData(const int tableID, const unsigned char *data,
 	return false;
 }
 
-bool TableData::getDataForSectionNumber(const size_t secNr, TableData::Data &data) const {
+bool TableData::getDataForSectionNumber(const size_t secNr, TableData::Data &data) const noexcept {
 	auto s = _dataTable.find(secNr);
 	if (s != _dataTable.end()) {
 		data = s->second;
@@ -280,7 +280,7 @@ int TableData::getAssociatedPID() const {
 	return -1;
 }
 
-bool TableData::isCollected() const {
+bool TableData::isCollected() const noexcept {
 	if (_collectingFinished) {
 		return true;
 	}
@@ -296,7 +296,7 @@ bool TableData::isCollected() const {
 	return _collectingFinished;
 }
 
-void TableData::setCollected() {
+void TableData::setCollected() noexcept {
 	_dataTable[_currentSectionNumber].collected = true;
 	// Do we need to read more sections, then increment
 	if (_currentSectionNumber < (_numberOfSections - 1)) {

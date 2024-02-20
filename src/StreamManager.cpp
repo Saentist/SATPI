@@ -21,7 +21,7 @@
 
 #include <Stream.h>
 #include <Log.h>
-#include <StreamClient.h>
+#include <output/StreamClient.h>
 #include <socket/SocketClient.h>
 #include <StringConverter.h>
 #include <input/childpipe/TSReader.h>
@@ -113,18 +113,6 @@ std::string StreamManager::getXMLDeliveryString() const {
 	return delSysStr;
 }
 
-std::string StreamManager::getRTSPDescribeString() const {
-	std::size_t dvb_s2 = 0u;
-	std::size_t dvb_t = 0u;
-	std::size_t dvb_t2 = 0u;
-	std::size_t dvb_c = 0u;
-	std::size_t dvb_c2 = 0u;
-	for (SpStream stream : _streamVector) {
-		stream->addDeliverySystemCount(dvb_s2, dvb_t, dvb_t2, dvb_c, dvb_c2);
-	}
-	return StringConverter::stringFormat("@#1,@#2,@#3", dvb_s2, dvb_t + dvb_t2, dvb_c + dvb_c2);
-}
-
 std::tuple<FeIndex, FeID> StreamManager::findFrontendIDWithStreamID(const StreamID id) const {
 	for (SpStream stream : _streamVector) {
 		if (stream->getStreamID() == id) {
@@ -151,7 +139,7 @@ std::tuple<FeIndex, FeID, StreamID> StreamManager::findFrontendID(const Transpor
 	return { FeIndex(), FeID(), StreamID() };
 }
 
-SpStream StreamManager::findStreamAndClientIDFor(SocketClient &socketClient, int &clientID) {
+std::tuple<SpStream, output::SpStreamClient>  StreamManager::findStreamAndClientFor(SocketClient &socketClient) {
 	// Here we need to find the correct Stream and StreamClient
 	assert(!_streamVector.empty());
 	HeaderVector headers = socketClient.getHeaders();
@@ -162,7 +150,6 @@ SpStream StreamManager::findStreamAndClientIDFor(SocketClient &socketClient, int
 
 	std::string sessionID = headers.getFieldParameter("Session");
 	bool newSession = false;
-	clientID = 0;
 
 	// if no sessionID, then make a new one or its just a outside message.
 	if (sessionID.empty()) {
@@ -176,51 +163,82 @@ SpStream StreamManager::findStreamAndClientIDFor(SocketClient &socketClient, int
 		} else {
 			// None of the above.. so it is just an outside session
 			SI_LOG_DEBUG("Found message outside session");
-			return nullptr;
+			return { nullptr, nullptr };
 		}
 	}
 
 	// if no index, then we have to find a suitable one
 	if (feIndex == -1) {
-		SI_LOG_INFO("Found FrondtendID: x (fe=x)  StreamID: x  SessionID: @#1", sessionID);
+		SI_LOG_INFO("Found FrondtendID: x (fe=x)  StreamID: x  SessionID: @#1  New Session: @#2",
+			sessionID, newSession ? "true" : "false");
 		for (SpStream stream : _streamVector) {
-			if (stream->findClientIDFor(socketClient, newSession, sessionID, clientID)) {
-				stream->getStreamClient(clientID).setSessionID(sessionID);
-				return stream;
+			output::SpStreamClient streamClient = stream->findStreamClientFor(socketClient, newSession, sessionID);
+			if (streamClient) {
+				streamClient->setSessionID(sessionID);
+				return { stream, streamClient };
 			}
 		}
 	} else {
 		SI_LOG_INFO("Found FrondtendID: @#1 (fe=@#2)  StreamID: @#3  SessionID: @#4", feID, feID, streamID, sessionID);
 		// Did we find the StreamClient?
-		if (_streamVector[feIndex]->findClientIDFor(socketClient, newSession, sessionID, clientID)) {
-			_streamVector[feIndex]->getStreamClient(clientID).setSessionID(sessionID);
-			return _streamVector[feIndex];
+		output::SpStreamClient streamClient = _streamVector[feIndex]->findStreamClientFor(socketClient, newSession, sessionID);
+		if (streamClient) {
+			streamClient->setSessionID(sessionID);
+			return { _streamVector[feIndex], streamClient };
 		}
 		// No, Then try to search in other Streams
 		for (SpStream stream : _streamVector) {
-			if (stream->findClientIDFor(socketClient, newSession, sessionID, clientID)) {
-				stream->getStreamClient(clientID).setSessionID(sessionID);
-				return stream;
+			streamClient = stream->findStreamClientFor(socketClient, newSession, sessionID);
+			if (streamClient) {
+				streamClient->setSessionID(sessionID);
+				return { stream, streamClient };
 			}
 		}
 	}
 	// Did not find anything
 	SI_LOG_ERROR("Found no Stream/Client of interest!");
-	return nullptr;
+	return { nullptr, nullptr };
 }
 
 void StreamManager::checkForSessionTimeout() {
 	assert(!_streamVector.empty());
 	for (SpStream stream : _streamVector) {
-		if (stream->streamInUse()) {
-			stream->checkForSessionTimeout();
-		}
+		stream->checkForSessionTimeout();
 	}
 }
 
-std::string StreamManager::getDescribeMediaLevelString(const FeIndex feIndex) const {
+std::string StreamManager::getSDPSessionLevelString(
+		const std::string& bindIPAddress,
+		const std::string& sessionID) const {
 	assert(!_streamVector.empty());
-	return _streamVector[feIndex.getID()]->getDescribeMediaLevelString();
+	std::size_t dvb_s2 = 0u;
+	std::size_t dvb_t = 0u;
+	std::size_t dvb_t2 = 0u;
+	std::size_t dvb_c = 0u;
+	std::size_t dvb_c2 = 0u;
+	for (SpStream stream : _streamVector) {
+		stream->addDeliverySystemCount(dvb_s2, dvb_t, dvb_t2, dvb_c, dvb_c2);
+	}
+	std::string sessionNameString = StringConverter::stringFormat("@#1,@#2,@#3",
+			dvb_s2, dvb_t + dvb_t2, dvb_c + dvb_c2);
+
+	static const char* SDP_SESSION_LEVEL =
+		"v=0\r\n" \
+		"o=- @#1 @#2 IN IP4 @#3\r\n" \
+		"s=SatIPServer:1 @#4\r\n" \
+		"t=0 0\r\n";
+
+	// Describe streams
+	return StringConverter::stringFormat(SDP_SESSION_LEVEL,
+		(sessionID.size() > 2) ? sessionID : "0",
+		(sessionID.size() > 2) ? sessionID : "0",
+		bindIPAddress,
+		sessionNameString);
+}
+
+std::string StreamManager::getSDPMediaLevelString(const FeIndex feIndex) const {
+	assert(!_streamVector.empty());
+	return _streamVector[feIndex.getID()]->getSDPMediaLevelString();
 }
 
 #ifdef LIBDVBCSA

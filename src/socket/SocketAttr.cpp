@@ -23,19 +23,23 @@
 #include <StringConverter.h>
 #include <socket/SocketClient.h>
 
-#include <string>
+#include <chrono>
 #include <cstring>
+#include <string>
+#include <thread>
 
 #include <arpa/inet.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 
 	// ===================================================================
 	//  -- Constructors and destructor -----------------------------------
 	// ===================================================================
 	SocketAttr::SocketAttr() :
 		_fd(-1),
-		_ipAddr("0.0.0.0") {
+		_ipAddr("0.0.0.0"),
+		_ttl(0) {
 		std::memset(&_addr, 0, sizeof(_addr));
 	}
 
@@ -53,24 +57,27 @@
 		_addr.sin_port = 0;
 	}
 
-	void SocketAttr::setupSocketStructure(const std::string_view ipAddr, int port) {
+	void SocketAttr::setupSocketStructure(const std::string_view ipAddr,
+			const int port, const int ttl) {
 		// fill in the socket structure with host information
 		memset(&_addr, 0, sizeof(_addr));
 		_addr.sin_family      = AF_INET;
 		_addr.sin_addr.s_addr = inet_addr(ipAddr.data());
 		_addr.sin_port        = htons(port);
 		_ipAddr = ipAddr.data();
+		_ttl = ttl;
 	}
 
-	void SocketAttr::setupSocketStructureWithAnyAddress(int port) {
+	void SocketAttr::setupSocketStructureWithAnyAddress(const int port, const int ttl) {
 		// fill in the socket structure with host information
 		memset(&_addr, 0, sizeof(_addr));
 		_addr.sin_family      = AF_INET;
 		_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 		_addr.sin_port        = htons(port);
+		_ttl = ttl;
 	}
 
-	bool SocketAttr::setupSocketHandle(int type, int protocol) {
+	bool SocketAttr::setupSocketHandle(const int type, const int protocol) {
 		if (_fd == -1) {
 			_fd = ::socket(AF_INET, type, protocol);
 			if (_fd == -1) {
@@ -82,6 +89,17 @@
 			if (::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(int)) == -1) {
 				SI_LOG_PERROR("setsockopt: SO_REUSEADDR");
 				return false;
+			}
+			if (type == SOCK_DGRAM && _ttl > 0) {
+				int ttl = _ttl;
+				if (::setsockopt(_fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) == -1) {
+					SI_LOG_PERROR("setsockopt: IP_MULTICAST_TTL");
+					return false;
+				}
+				if (::setsockopt(_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) == -1) {
+					SI_LOG_PERROR("setsockopt: IP_TTL: @#1", ttl);
+					return false;
+				}
 			}
 		}
 		return true;
@@ -147,6 +165,7 @@
 	}
 
 	bool SocketAttr::sendData(const void *buf, std::size_t len, int flags) {
+		base::MutexLock lock(_mutex);
 		if (::send(_fd, buf, len, flags) == -1) {
 			SI_LOG_PERROR("send");
 			return false;
@@ -155,19 +174,36 @@
 	}
 
 	bool SocketAttr::writeData(const iovec *iov, const int iovcnt) {
-		if (::writev(_fd, iov, iovcnt) == -1) {
-			if (errno != EBADF) {
-				SI_LOG_PERROR("writev");
-			}
+		if (_fd == -1) {
 			return false;
 		}
-		return true;
+		{
+			base::MutexLock lock(_mutex);
+			if (::writev(_fd, iov, iovcnt) != -1) {
+				return true;
+			}
+		}
+		if (errno != EBADF) {
+			timeval tv{};
+			fd_set fds{};
+			tv.tv_sec = 5;
+			FD_ZERO(&fds);
+			FD_SET(_fd, &fds);
+			if (select(1, &fds, nullptr, nullptr, &tv) != -1) {
+				base::MutexLock lock(_mutex);
+				if (::writev(_fd, iov, iovcnt) != -1) {
+					return true;
+				}
+			}
+		}
+		SI_LOG_PERROR("writeData: ");
+		return false;
 	}
 
 	bool SocketAttr::sendDataTo(const void *buf, std::size_t len, int flags) {
 		if (::sendto(_fd, buf, len, flags, reinterpret_cast<sockaddr *>(&_addr),
 				   sizeof(_addr)) == -1) {
-			SI_LOG_PERROR("sendto");
+			SI_LOG_PERROR("sendto (fd: @#1)", _fd);
 			return false;
 		}
 		return true;
@@ -235,22 +271,6 @@
 	bool SocketAttr::setNetworkReceiveBufferSize(int size) {
 		if (::setsockopt(_fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) == -1) {
 			SI_LOG_PERROR("setsockopt: SO_RCVBUF");
-			return false;
-		}
-		return true;
-	}
-
-	bool SocketAttr::setSocketMutlicastTTL(int ttl) {
-		if (::setsockopt(_fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) == -1) {
-			SI_LOG_PERROR("setsockopt: IP_MULTICAST_TTL");
-			return false;
-		}
-		return true;
-	}
-
-	bool SocketAttr::setSocketUnicastTTL(int ttl) {
-		if (::setsockopt(_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) == -1) {
-			SI_LOG_PERROR("setsockopt: IP_MULTICAST_TTL");
 			return false;
 		}
 		return true;

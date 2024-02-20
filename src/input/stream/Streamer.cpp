@@ -56,7 +56,7 @@ void Streamer::enumerate(
 	SI_LOG_INFO("Setting up TS Streamer");
 	const StreamSpVector::size_type size = streamVector.size();
 	const input::stream::SpStreamer streamer = std::make_shared<Streamer>(size, bindIPAddress, appDataPath);
-	streamVector.push_back(std::make_shared<Stream>(streamer, nullptr));
+	streamVector.push_back(Stream::makeSP(streamer, nullptr));
 }
 
 // =============================================================================
@@ -103,7 +103,7 @@ bool Streamer::isDataAvailable() {
 	return false;
 }
 
-bool Streamer::readTSPackets(mpegts::PacketBuffer &buffer, const bool finalCall) {
+bool Streamer::readTSPackets(mpegts::PacketBuffer& buffer) {
 	if (_udpMultiListen.getFD() == -1) {
 		return false;
 	}
@@ -117,12 +117,16 @@ bool Streamer::readTSPackets(mpegts::PacketBuffer &buffer, const bool finalCall)
 		// Add data to Filter
 		_deviceData.getFilter().filterData(_feID, buffer, _deviceData.isInternalPidFilteringEnabled());
 	}
-	// Check again if buffer is full or final call before sending
-	return buffer.full() || (finalCall && buffer.isReadyToSend());
+	// Check again if buffer is full
+	return buffer.full();
 }
 
 bool Streamer::capableOf(const input::InputSystem system) const {
 	return system == input::InputSystem::STREAMER;
+}
+
+bool Streamer::capableToShare(const TransportParamVector& UNUSED(params)) const {
+	return false;
 }
 
 bool Streamer::capableToTransform(const TransportParamVector& params) const {
@@ -130,13 +134,17 @@ bool Streamer::capableToTransform(const TransportParamVector& params) const {
 	return capableOf(system);
 }
 
+bool Streamer::isLockedByOtherProcess() const {
+	return false;
+}
+
 bool Streamer::monitorSignal(const bool UNUSED(showStatus)) {
 	_deviceData.setMonitorData(FE_HAS_LOCK, 240, 15, 0, 0);
 	return true;
 }
 
-bool Streamer::hasDeviceDataChanged() const {
-	return _deviceData.hasDeviceDataChanged();
+bool Streamer::hasDeviceFrequencyChanged() const {
+	return _deviceData.hasDeviceFrequencyChanged();
 }
 
 // Server side
@@ -156,8 +164,8 @@ void Streamer::parseStreamString(const TransportParamVector& params) {
 
 bool Streamer::update() {
 	SI_LOG_INFO("Frontend: @#1, Updating frontend...", _feID);
-	if (_deviceData.hasDeviceDataChanged()) {
-		_deviceData.resetDeviceDataChanged();
+	if (_deviceData.hasDeviceFrequencyChanged()) {
+		_deviceData.resetDeviceFrequencyChanged();
 		closeActivePIDFilters();
 		_udpMultiListen.closeFD();
 	}
@@ -165,7 +173,7 @@ bool Streamer::update() {
 		//  Open mutlicast stream
 		const std::string multiAddr = _deviceData.getMultiAddr();
 		const int port = _deviceData.getPort();
-		if(initMutlicastUDPSocket(_udpMultiListen, multiAddr, _bindIPAddress, port)) {
+		if(initMutlicastUDPSocket(_udpMultiListen, multiAddr, _bindIPAddress, port, 1)) {
 			SI_LOG_INFO("Frontend: @#1, Streamer reading from: @#2:@#3  fd @#4",
 				_feID, multiAddr, port, _udpMultiListen.getFD());
 			// set receive buffer to 8MB

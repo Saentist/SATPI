@@ -30,7 +30,7 @@ namespace input {
 
 DeviceData::DeviceData() {
 	_delsys = input::InputSystem::UNDEFINED;
-	_changed = false;
+	_frequencyChanged = false;
 	_internalPidFiltering = false;
 	_status = static_cast<fe_status_t>(0);
 	_strength = 0;
@@ -78,7 +78,7 @@ void DeviceData::doFromXML(const std::string &xml) {
 
 void DeviceData::initialize() {
 	base::MutexLock lock(_mutex);
-	_changed = false;
+	_frequencyChanged = false;
 	_delsys = input::InputSystem::UNDEFINED;
 	_filter.clear();
 	setMonitorData(static_cast<fe_status_t>(0), 0, 0, 0, 0);
@@ -126,8 +126,9 @@ fe_delivery_system DeviceData::convertDeliverySystem() const {
 		case input::InputSystem::DVBS:
 			return SYS_DVBS;
 		case input::InputSystem::DVBS2:
-		case input::InputSystem::DVBS2X:
 			return SYS_DVBS2;
+		case input::InputSystem::DVBS2X:
+			return SYS_DVBS2X;
 		case input::InputSystem::DVBC:
 #if FULL_DVB_API_VERSION >= 0x0505
 			return SYS_DVBC_ANNEX_A;
@@ -139,28 +140,31 @@ fe_delivery_system DeviceData::convertDeliverySystem() const {
 	}
 }
 
-void DeviceData::resetDeviceDataChanged() {
+void DeviceData::resetDeviceFrequencyChanged() {
 	base::MutexLock lock(_mutex);
-	_changed = false;
+	_frequencyChanged = false;
 }
 
-bool DeviceData::hasDeviceDataChanged() const {
+bool DeviceData::hasDeviceFrequencyChanged() const {
 	base::MutexLock lock(_mutex);
-	return _changed;
+	return _frequencyChanged;
 }
 
-void DeviceData::parseAndUpdatePidsTable(const TransportParamVector& params) {
+void DeviceData::parseAndUpdatePidsTable(FeID id, const TransportParamVector& params) {
 	const std::string pidsList = params.getParameter("pids");
 	if (!pidsList.empty()) {
-		_filter.parsePIDString(pidsList, true);
+		SI_LOG_DEBUG("Frontend: @#1, Parsing PID parameter: pids=@#2", id, pidsList);
+		_filter.parsePIDString(id, pidsList, true);
 	}
 	const std::string addpidsList = params.getParameter("addpids");
 	if (!addpidsList.empty()) {
-		_filter.parsePIDString(addpidsList, true);
+		SI_LOG_DEBUG("Frontend: @#1, Parsing PID parameter: addpids=@#2", id, addpidsList);
+		_filter.parsePIDString(id, addpidsList, true);
 	}
 	const std::string delpidsList = params.getParameter("delpids");
 	if (!delpidsList.empty()) {
-		_filter.parsePIDString(delpidsList, false);
+		SI_LOG_DEBUG("Frontend: @#1, Parsing PID parameter: delpids=@#2", id, delpidsList);
+		_filter.parsePIDString(id, delpidsList, false);
 	}
 }
 

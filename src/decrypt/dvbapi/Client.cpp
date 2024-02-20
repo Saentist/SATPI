@@ -94,7 +94,7 @@ namespace decrypt::dvbapi {
 	void Client::decrypt(const FeIndex index, const FeID id, mpegts::PacketBuffer &buffer) {
 		if (_connected && _enabled) {
 			const input::dvb::SpFrontendDecryptInterface frontend = _streamManager.getFrontendDecryptInterface(index);
-			const int maxBatchSize = frontend->getMaximumBatchSize();
+			const unsigned int maxBatchSize = frontend->getMaximumBatchSize();
 			const std::size_t size = buffer.getNumberOfCompletedPackets();
 			for (std::size_t i = 0; i < size; ++i) {
 				// Get TS packet from the buffer
@@ -109,11 +109,11 @@ namespace decrypt::dvbapi {
 					if (data[3] & 0x80 && pid < 0x1FFF) {
 
 						// scrambled TS packet with even(0) or odd(1) key?
-						const int parity = (data[3] & 0x40) > 0;
+						const unsigned int parity = (data[3] & 0x40) > 0;
 
 						// get batch parity and count
-						const int parityBatch = frontend->getBatchParity();
-						const int countBatch  = frontend->getBatchCount();
+						const unsigned int parityBatch = frontend->getBatchParity();
+						const unsigned int countBatch  = frontend->getBatchCount();
 
 						// check if the parity changed in this batch (but should not be the begin of the batch)
 						// or check if this batch full, then decrypt this batch
@@ -128,11 +128,12 @@ namespace decrypt::dvbapi {
 
 						// Can we add this packet to the batch
 						if (frontend->getKey(parity) != nullptr) {
-							// check is there an adaptation field we should skip, then add it to batch
-							int skip = 4;
+							// check is there an adaptation field we should skip.
+							unsigned int skip = 4;
 							if((data[3] & 0x20) && (data[4] < 183)) {
 								skip += data[4] + 1;
 							}
+							// Add it to batch.
 							frontend->setBatchData(data + skip, 188 - skip, parity, data);
 
 							// set pending decrypt for this buffer
@@ -147,23 +148,21 @@ namespace decrypt::dvbapi {
 						}
 					} else {
 						// Need to filter this packet to OSCam
-						int demux = 0;
-						int filter = 0;
-						int tableID = data[5];
+						unsigned int demux = 0;
+						unsigned int filter = 0;
+						unsigned int tableID = data[5];
 						mpegts::TSData filterData;
 						if (frontend->findOSCamFilterData(pid, data, tableID, filter, demux, filterData)) {
 							// Don't send PAT or PMT before we have an active
 							if (pid == 0 || frontend->isMarkedAsActivePMT(pid)) {
 							} else {
-								const unsigned char *tableData = filterData.c_str();
+								const unsigned char* tableData = filterData.data();
 								const int sectionLength = (((tableData[6] & 0x0F) << 8) | tableData[7]) + 3; // 3 = tableID + length field
-#ifdef ICAM
-								// Check for ICAM ECM
+								// Check for ICAM in ECM
 								if ((tableID == mpegts::TableData::ECM0_ID ||	tableID == mpegts::TableData::ECM1_ID)) {
-										frontend->setICAM(
-											((tableData[7] - tableData[9]) == 4) ? tableData[26] : 0, tableID & 0x01);
+										frontend->setICAM(((tableData[7] - tableData[9]) == 4) ?
+											tableData[26] : 0, ((tableID & 0x01) > 0));
 								}
-#endif
 								std::unique_ptr<unsigned char[]> clientData(new unsigned char[sectionLength + 25]);
 								const uint32_t request = htonl(DVBAPI_FILTER_DATA);
 								std::memcpy(&clientData[0], &request, 4);
@@ -224,7 +223,7 @@ namespace decrypt::dvbapi {
 
 	bool Client::initClientSocket(SocketClient &client, const std::string &ipAddr, int port) {
 
-		client.setupSocketStructure(ipAddr, port);
+		client.setupSocketStructure(ipAddr, port, 0);
 
 		if (!client.setupSocketHandle(SOCK_STREAM /*| SOCK_NONBLOCK*/, 0)) {
 			SI_LOG_ERROR("OSCam Server handle failed");
@@ -254,7 +253,7 @@ namespace decrypt::dvbapi {
 		std::memcpy(&buff[4], &version, 2);
 
 		buff[6] = len;
-		std::memcpy(&buff[7], name.c_str(), len);
+		std::memcpy(&buff[7], name.data(), len);
 
 		if (!_client.sendData(buff.get(), 7 + len, MSG_DONTWAIT)) {
 			SI_LOG_ERROR("write failed");
@@ -401,7 +400,7 @@ namespace decrypt::dvbapi {
 					char tmpData[2048];
 					auto i = 0;
 					const ssize_t size = _client.recvDatafrom(tmpData, sizeof(tmpData) - 1, MSG_DONTWAIT);
-					const unsigned char *buf = reinterpret_cast<unsigned char *>(&tmpData);
+					const unsigned char* buf = reinterpret_cast<unsigned char *>(&tmpData);
 					if (size > 0) {
 						while (i < size) {
 							// get command
@@ -423,8 +422,8 @@ namespace decrypt::dvbapi {
 										const int demux   =  buf[i + 5];
 										const int filter  =  buf[i + 6];
 										const int pid     = (buf[i + 7] << 8) | buf[i + 8];
-										const unsigned char *filterData = &buf[i + 9];
-										const unsigned char *filterMask = &buf[i + 25];
+										const unsigned char* filterData = &buf[i + 9];
+										const unsigned char* filterMask = &buf[i + 25];
 
 //										SI_LOG_BIN_DEBUG(&buf[i], 65, "Frontend: @#1, DVBAPI_DMX_SET_FILTER", adapter);
 
@@ -534,10 +533,10 @@ namespace decrypt::dvbapi {
 			_serverIPAddr = element;
 		}
 		if (findXMLElement(xml, "OSCamPORT.value", element)) {
-			_serverPort = std::stoi(element.c_str());
+			_serverPort = std::stoi(element.data());
 		}
 		if (findXMLElement(xml, "AdapterOffset.value", element)) {
-			_adapterOffset = std::stoi(element.c_str());
+			_adapterOffset = std::stoi(element.data());
 		}
 		if (findXMLElement(xml, "OSCamEnabled.value", element)) {
 			_enabled = (element == "true") ? true : false;

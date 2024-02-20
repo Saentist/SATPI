@@ -22,10 +22,10 @@
 
 #include <Defs.h>
 #include <FwDecl.h>
+#include <input/dvb/delivery/FBC.h>
 #include <input/dvb/delivery/System.h>
 
-#include <stdlib.h>
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 #include <map>
 
@@ -82,18 +82,6 @@ class DVBS :
 		bool setProperties(int feFD, uint32_t freq, const input::dvb::FrontendData &frontendData);
 
 		// =========================================================================
-		// -- FBC member functions -------------------------------------------------
-		// =========================================================================
-		///
-		int readProcData(FeIndex index, const std::string &procEntry) const;
-
-		///
-		void writeProcData(FeIndex index, const std::string &procEntry, int value);
-
-		///
-		void readConnectionChoices(FeIndex index, int offset);
-
-		// =========================================================================
 		// -- Data members ---------------------------------------------------------
 		// =========================================================================
 	private:
@@ -104,22 +92,11 @@ class DVBS :
 			EN50607,
 			Lnb
 		};
+		FBC _fbc;
 		DiseqcType _diseqcType;
 		UpDiSEqc _diseqc;
 		bool _turnoffLnbVoltage;
 		bool _higherLnbVoltage;
-
-		// =========================================================================
-		// -- FBC Data members -----------------------------------------------------
-		// =========================================================================
-		using ConnectionChoices = std::map<int, std::string>;
-		ConnectionChoices _choices;
-		bool _fbcTuner;
-		bool _fbcRoot;
-		int _fbcSetID;
-		int _fbcConnect;
-		bool _fbcLinked;
-		bool _sendDiSEqcViaRootTuner;
 
 };
 

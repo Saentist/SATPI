@@ -70,9 +70,10 @@ class Filter :
 		void clear();
 
 		/// Parse the CSV PID string with requested PIDs and update @see PidTable
+		/// @param id
 		/// @param reqPids specifies the requested PIDs
 		/// @param add specifies if true to open all the PIDs or false to close
-		void parsePIDString(const std::string &reqPids, bool add);
+		void parsePIDString(FeID id, const std::string &reqPids, bool add);
 
 		/// Add the filter data to MPEG Tables and
 		/// optionally purge TS packets from unused pids if filter is true
@@ -84,13 +85,37 @@ class Filter :
 		/// This will return true if the requested pid is the active/current one
 		/// accoording to the PCR that is open.
 		/// @param pid specifies the PID to check if it is the current one
-		bool isMarkedAsActivePMT(int pid) const;
+		bool isMarkedAsActivePMT(int pid) const {
+			base::MutexLock lock(_mutex);
+			if (_pat->isMarkedAsPMT(pid) && _pmtMap.find(pid) != _pmtMap.end()) {
+				const int pcrPID = _pmtMap[pid]->getPCRPid();
+				if (_pidTable.isPIDOpened(pcrPID) && _pidTable.getPacketCounter(pcrPID) > 0) {
+					return true;
+				}
+			}
+			return false;
+		}
 
 		/// This will return the requested PMT for the specified pid
 		/// @param pid specifies the PID to retrieve if it does not exists it will
 		/// return an empty PMT. When set to 0 it will try to return the current PMT
 		/// accoording the PCR that is open
-		mpegts::SpPMT getPMTData(int pid) const;
+		mpegts::SpPMT getPMTData(int pid) const {
+			base::MutexLock lock(_mutex);
+			if (pid == 0) {
+				// Try to find current PMT based on open PCR
+				for (const auto& [_, pmt] : _pmtMap) {
+					const int pcrPID = pmt->getPCRPid();
+					if (_pidTable.isPIDOpened(pcrPID) && _pidTable.getPacketCounter(pcrPID) > 0) {
+						return pmt;
+					}
+				}
+			}
+			if (_pmtMap.find(pid) != _pmtMap.end()) {
+				return _pmtMap[pid];
+			}
+			return std::make_shared<PMT>();
+		}
 
 		///
 		mpegts::SpPCR getPCRData() const {
@@ -120,13 +145,22 @@ class Filter :
 		// =========================================================================
 
 		/// Get the total amount of Continuity Counter Error
-		uint32_t getTotalCCErrors() const;
+		uint32_t getTotalCCErrors() const {
+			base::MutexLock lock(_mutex);
+			return _pidTable.getTotalCCErrors();
+		}
 
 		/// Get the CSV of all the requested PID
-		std::string getPidCSV() const;
+		std::string getPidCSV() const {
+			base::MutexLock lock(_mutex);
+			return _pidTable.getPidCSV();
+		}
 
 		/// Set pid used or not
-		void setPID(int pid, bool val);
+		void setPID(int pid, bool val) {
+			base::MutexLock lock(_mutex);
+			_pidTable.setPID(pid, val);
+		}
 
 		/// Close all active PID filter
 		/// @param feID specifies the frontend ID
@@ -174,7 +208,9 @@ class Filter :
 		/// @param openPid specifies the lambda function to use to open the PID with
 		template<typename OPEN_FUNC>
 		void openPIDFilter_L(const FeID feID, const int pid, OPEN_FUNC openPid) {
+			_mutex.unlock();
 			const bool done = openPid(pid);
+			_mutex.tryLock(15000);
 			if (done) {
 				_pidTable.setPIDOpened(pid);
 				SI_LOG_DEBUG("Frontend: @#1, Set filter PID: @#2@#3",
@@ -189,7 +225,9 @@ class Filter :
 		/// @param closePid specifies the lambda function to use to close the PID with
 		template<typename CLOSE_FUNC>
 		void closePIDFilter_L(const FeID feID, const int pid, CLOSE_FUNC closePid) {
+			_mutex.unlock();
 			const bool done = closePid(pid);
+			_mutex.tryLock(15000);
 			if (done) {
 				SI_LOG_DEBUG("Frontend: @#1, Remove filter PID: @#2 - Packet Count: @#3:@#4@#5",
 					feID, PID(pid),
@@ -207,7 +245,7 @@ class Filter :
 					_pmtMap.erase(pid);
 				} else {
 					// Did we close the PCR Pid
-					for (const auto &[_, pmt] : _pmtMap) {
+					for (const auto& [_, pmt] : _pmtMap) {
 						const int pcrPID = pmt->getPCRPid();
 						if (pcrPID > 0 && pcrPID == pid) {
 							const int pmtPID = pmt->getAssociatedPID();

@@ -118,10 +118,10 @@ void FrontendData::doParseStreamString(const FeID id, const TransportParamVector
 		const std::string method = params[0];
 		if (reqFreq != oldFreq) {
 			// New frequency, so initialize FrontendData and 'remove' all used PIDS
-			SI_LOG_INFO("Frontend: @#1, New frequency requested, clearing old channel data...", id);
+			SI_LOG_INFO("Frontend: @#1, New frequency requested (@#2 -> @#3), clearing old channel data...", id, oldFreq, reqFreq);
 			initialize();
 			_freq = reqFreq * 1000.0;
-			_changed = true;
+			_frequencyChanged = true;
 		} else if (method == "SETUP" || method == "PLAY") {
 			const std::string list = params.getParameter("pids");
 			if (list.empty()) {
@@ -143,21 +143,21 @@ void FrontendData::doParseStreamString(const FeID id, const TransportParamVector
 	if (isId != -1) {
 		if (_isId != isId) {
 			_isId = isId;
-			_changed = true;
+			_frequencyChanged = true;
 		}
 	}
 	const int plsCode = params.getIntParameter("plsc");
 	if (plsCode != -1) {
 		if (_plsCode != plsCode) {
 			_plsCode = plsCode & 0x3FFFF;
-			_changed = true;
+			_frequencyChanged = true;
 		}
 	}
 	const int plpId = params.getIntParameter("plp");
 	if (plpId != -1) {
 		if (_plpId != plpId) {
 			_plpId = plpId;
-			_changed = true;
+			_frequencyChanged = true;
 		}
 	}
 	const int plsMode = params.getIntParameter("plsm");
@@ -275,11 +275,14 @@ void FrontendData::doParseStreamString(const FeID id, const TransportParamVector
 			_modtype = QAM_128;
 		} else if (mtype == "256qam" || mtype == "qam256") {
 			_modtype = QAM_256;
+		} else if (mtype == "auto") {
+			_modtype = QAM_AUTO;
 		} else {
-			SI_LOG_ERROR("Frontend: @#1, Unknown modulation type [@#2]", id, mtype);
+			SI_LOG_ERROR("Frontend: @#1, Unknown modulation type [@#2] using auto", id, mtype);
+			_modtype = QAM_AUTO;
 		}
 	} else if (msys != input::InputSystem::UNDEFINED) {
-		// no 'mtype' set, so guess one according to 'msys'
+		// no 'mtype' set. But msys is set, so guess 'mtype' according to 'msys'
 		switch (msys) {
 			case input::InputSystem::DVBS:
 				_modtype = QPSK;
@@ -359,7 +362,7 @@ void FrontendData::doParseStreamString(const FeID id, const TransportParamVector
 	if (sm != -1) {
 		_siso_miso = sm;
 	}
-	parseAndUpdatePidsTable(params);
+	parseAndUpdatePidsTable(id, params);
 }
 
 std::string FrontendData::doAttributeDescribeString(const FeID id) const {

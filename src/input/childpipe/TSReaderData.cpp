@@ -50,24 +50,26 @@ void TSReaderData::doInitialize() {
 	_genPSI = false;
 }
 
-void TSReaderData::doParseStreamString(const FeID UNUSED(id), const TransportParamVector& params) {
+void TSReaderData::doParseStreamString(const FeID id, const TransportParamVector& params) {
+/*
 	const std::string genPSI = params.getParameter("genPSI");
 	if (genPSI == "yes") {
 		initialize();
-		parseAndUpdatePidsTable(params);
-		_changed = true;
+		parseAndUpdatePidsTable(id, params);
+		_frequencyChanged = true;
 		_genPSI = true;
 		_pcrTimer = 100;
 		return;
 	}
+*/
 	const std::string filePath = params.getURIParameter("exec");
 	// Check did we receive an new path or just the same again
 	if (filePath.empty() || (hasFilePath() && filePath == _filePath)) {
-		parseAndUpdatePidsTable(params);
+		parseAndUpdatePidsTable(id, params);
 		return;
 	}
 	initialize();
-	_changed = true;
+	_frequencyChanged = true;
 	_filePath = StringConverter::getPercentDecoding(filePath);
 	// when 'pcrtimer=' is not set or zero the PCR from the stream is used, else this timer
 	// will be used as read interval.
@@ -75,7 +77,7 @@ void TSReaderData::doParseStreamString(const FeID UNUSED(id), const TransportPar
 	if (pcrTimer != -1) {
 		_pcrTimer = pcrTimer;
 	}
-	parseAndUpdatePidsTable(params);
+	parseAndUpdatePidsTable(id, params);
 }
 
 std::string TSReaderData::doAttributeDescribeString(const FeID id) const {
@@ -100,7 +102,7 @@ bool TSReaderData::hasFilePath() const {
 }
 
 int TSReaderData::getPCRTimer() const {
-	base::MutexLock lock(_mutex);
+//	base::MutexLock lock(_mutex);
 	return _pcrTimer;
 }
 

@@ -95,6 +95,8 @@
 			page += addTableLineEntry("Turn off LNB Voltage during teardown", xmlDoc, streamID + "turnoffLNBPower");
 			page += addTableLineEntry("Enable slightly higher LNB Voltage", xmlDoc, streamID + "higherLnbVoltage");
 			page += addTableLineEntry("List of PIDs to add to requests (CSV)", xmlDoc, streamID + "addUserPids");
+			page += addTableLineEntry("Maximum DVBCSA Batch Size", xmlDoc, streamID + "dvbcsa_bs_batch_size");
+			page += addTableLineEntry("ICAM enabled in libdvbcsa", xmlDoc, streamID + "icamEnabled");
 
 			var transformation = visibleStream.getElementsByTagName("transformation");
 			if (transformation.length > 0) {
@@ -108,9 +110,11 @@
 			var fbc = visibleStream.getElementsByTagName("fbc");
 			if (fbc.length > 0) {
 				page += "<tr class=\"separator bg-info\"><th colspan=\"" + (streams.length+1) + "\">FBC Configuration</th></tr>";
-				page += addTableLineEntry("FBC Connection", xmlDoc, streamID + "fbcConnection");
+				page += addTableLineEntry("FBC Input Connection", xmlDoc, streamID + "fbcConnection");
 				page += addTableLineEntry("FBC Linked", xmlDoc, streamID + "fbcLinked");
 				page += addTableLineEntry("Send DiSEqC Via Linked Root Tuner", xmlDoc, streamID + "sendDiSEqcViaRootTuner");
+				page += addTableLineEntry("FBC Tuner Connected to", xmlDoc, streamID + "fbcConnectionRaw");
+				page += addTableLineEntry("FBC Tuner Slot Offset", xmlDoc, streamID + "fbcTunerSlotOffset");
 			}
 
 			var diseqcType = visibleStream.getElementsByTagName("diseqcType");

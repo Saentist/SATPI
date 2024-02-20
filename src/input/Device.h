@@ -68,24 +68,33 @@ class Device :
 
 		/// Read the available data from this device
 		/// @param buffer this is the buffer were to wirite to
-		/// @param finalCall this should be the last try and should return as soon as possible
-		virtual bool readTSPackets(mpegts::PacketBuffer &buffer, bool finalCall) = 0;
+		virtual bool readTSPackets(mpegts::PacketBuffer& buffer) = 0;
 
 		/// Check the capability of this device
-		/// @param system
+		/// @param system specifies the input system that this device is capable of
 		virtual bool capableOf(input::InputSystem system) const = 0;
+
+		/// Check if this device can be shared
+		/// @param params
+		virtual bool capableToShare(const TransportParamVector& params) const = 0;
 
 		/// Check if this device can transform the reguest according to an M3U file
 		/// This function should be called after function @c capableOf
 		/// @param params
 		virtual bool capableToTransform(const TransportParamVector& params) const = 0;
 
+		/// Check if this device is already claimed/opened by an other process.
+		/// @return true meaning the device is opened by an other process
+		virtual bool isLockedByOtherProcess() const = 0;
+
 		/// Monitor signal of this device
 		/// @return true meaning there is a Signal Lock
 		virtual bool monitorSignal(bool showStatus) = 0;
 
-		///
-		virtual bool hasDeviceDataChanged() const = 0;
+		/// This indicates that the frequency (or pol) has changed, so some actions
+		/// are required
+		/// @return true meaning the frequency (or pol) has changed
+		virtual bool hasDeviceFrequencyChanged() const = 0;
 
 		/// Parse the input/request string from client.
 		///   For example:

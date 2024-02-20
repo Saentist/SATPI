@@ -32,6 +32,11 @@
 namespace input::childpipe {
 
 // =============================================================================
+//  -- Static constexpr variables ----------------------------------------------
+// =============================================================================
+static constexpr int WAIT_TIMER = 10;
+
+// =============================================================================
 //  -- Constructors and destructor ---------------------------------------------
 // =============================================================================
 
@@ -55,7 +60,7 @@ void TSReader::enumerate(
 	const StreamSpVector::size_type size = streamVector.size();
 	const input::childpipe::SpTSReader tsreader =
 		std::make_shared<input::childpipe::TSReader>(size, appDataPath, enableUnsecureFrontends);
-	streamVector.push_back(std::make_shared<Stream>(tsreader, nullptr));
+	streamVector.push_back(Stream::makeSP(tsreader, nullptr));
 }
 
 // =============================================================================
@@ -108,13 +113,13 @@ bool TSReader::isDataAvailable() {
 		_t1 = std::chrono::steady_clock::now();
 		_deviceData.getFilter().getPCRData()->clearPCRDelta();
 	} else {
-		std::this_thread::sleep_for(std::chrono::microseconds(150 + pcrTimer));
+		std::this_thread::sleep_for(std::chrono::microseconds(WAIT_TIMER + pcrTimer));
 	}
 	return true;
 }
 
-bool TSReader::readTSPackets(mpegts::PacketBuffer &buffer, const bool finalCall) {
-///////////////////////
+bool TSReader::readTSPackets(mpegts::PacketBuffer& buffer) {
+/*
 	if (_deviceData.generatePSI()) {
 		const mpegts::TSData data = _deviceData.getPSIGenerator().generatePSIFrom(
 			_feID, _transform.getTransformationMap());
@@ -126,24 +131,24 @@ bool TSReader::readTSPackets(mpegts::PacketBuffer &buffer, const bool finalCall)
 
 		return buffer.full();
 	}
-///////////////////////
+*/
 	if (!_exec.isOpen()) {
 		return false;
 	}
-	for (int i = 0; i < 7; ++i) {
+	const bool filter = _deviceData.isInternalPidFilteringEnabled();
+	for (int i = 0; i < 21; ++i) {
 		const int readSize = _exec.read(buffer.getWriteBufferPtr(), buffer.getAmountOfBytesToWrite());
 		if (readSize > 0) {
 			buffer.addAmountOfBytesWritten(readSize);
 			buffer.trySyncing();
-			_deviceData.getFilter().filterData(_feID, buffer, _deviceData.isInternalPidFilteringEnabled());
-			if (buffer.full() || finalCall) {
-				break;
+			_deviceData.getFilter().filterData(_feID, buffer, filter);
+			if (buffer.full()) {
+				return true;
 			}
 		}
-		std::this_thread::sleep_for(std::chrono::microseconds(5));
 	}
-	// Check again if buffer is full or final call before sending
-	return buffer.full() || (finalCall && buffer.isReadyToSend());
+	// Check again if buffer is full
+	return buffer.full();
 }
 
 bool TSReader::capableOf(const input::InputSystem system) const {
@@ -153,9 +158,17 @@ bool TSReader::capableOf(const input::InputSystem system) const {
 	return false;
 }
 
+bool TSReader::capableToShare(const TransportParamVector& UNUSED(params)) const {
+	return false;
+}
+
 bool TSReader::capableToTransform(const TransportParamVector& params) const {
 	const input::InputSystem system = _transform.getTransformationSystemFor(params);
 	return system == input::InputSystem::CHILDPIPE;
+}
+
+bool TSReader::isLockedByOtherProcess() const {
+	return false;
 }
 
 bool TSReader::monitorSignal(bool UNUSED(showStatus)) {
@@ -163,8 +176,8 @@ bool TSReader::monitorSignal(bool UNUSED(showStatus)) {
 	return true;
 }
 
-bool TSReader::hasDeviceDataChanged() const {
-	return _deviceData.hasDeviceDataChanged();
+bool TSReader::hasDeviceFrequencyChanged() const {
+	return _deviceData.hasDeviceFrequencyChanged();
 }
 
 void TSReader::parseStreamString(const TransportParamVector& params) {
@@ -179,8 +192,8 @@ void TSReader::parseStreamString(const TransportParamVector& params) {
 
 bool TSReader::update() {
 	SI_LOG_INFO("Frontend: @#1, Updating frontend...", _feID);
-	if (_deviceData.hasDeviceDataChanged()) {
-		_deviceData.resetDeviceDataChanged();
+	if (_deviceData.hasDeviceFrequencyChanged()) {
+		_deviceData.resetDeviceFrequencyChanged();
 		closeActivePIDFilters();
 		_exec.close();
 	}
