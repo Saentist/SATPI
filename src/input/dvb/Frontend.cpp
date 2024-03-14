@@ -97,75 +97,77 @@ Frontend::Frontend(
 // =============================================================================
 //  -- Static functions --------------------------------------------------------
 // =============================================================================
-// Called recursive
-static void getAttachedFrontends(
-		StreamSpVector &streamVector,
-		const std::string &appDataPath,
-		decrypt::dvbapi::SpClient decrypt,
-		const std::string &path,
-		const std::string &startPath) {
-	const std::string ADAPTER = startPath + "/adapter@#1";
-	const std::string DMX = ADAPTER + "/demux@#2";
-	const std::string DVR = ADAPTER + "/dvr@#2";
-	const std::string FRONTEND = ADAPTER + "/frontend@#2";
-#if SIMU
-	// unused var
-	(void)path;
+namespace {
+	// Called recursive
+	void getAttachedFrontends(
+			StreamSpVector &streamVector,
+			const std::string &appDataPath,
+			decrypt::dvbapi::SpClient decrypt,
+			const std::string &path,
+			const std::string &startPath) {
+		const std::string ADAPTER = startPath + "/adapter@#1";
+		const std::string DMX = ADAPTER + "/demux@#2";
+		const std::string DVR = ADAPTER + "/dvr@#2";
+		const std::string FRONTEND = ADAPTER + "/frontend@#2";
+	#if SIMU
+		// unused var
+		(void)path;
 
-	const std::string fe0 = StringConverter::stringFormat(FRONTEND.data(), 0, 0);
-	const std::string dvr0 = StringConverter::stringFormat(DVR.data(), 0, 0);
-	const std::string dmx0 = StringConverter::stringFormat(DMX.data(), 0, 0);
-	input::dvb::SpFrontend frontend0 = std::make_shared<input::dvb::Frontend>(0, appDataPath, fe0, dvr0, dmx0);
-	streamVector.push_back(Stream::makeSP(frontend0, decrypt));
+		const std::string fe0 = StringConverter::stringFormat(FRONTEND.data(), 0, 0);
+		const std::string dvr0 = StringConverter::stringFormat(DVR.data(), 0, 0);
+		const std::string dmx0 = StringConverter::stringFormat(DMX.data(), 0, 0);
+		input::dvb::SpFrontend frontend0 = std::make_shared<input::dvb::Frontend>(0, appDataPath, fe0, dvr0, dmx0);
+		streamVector.push_back(Stream::makeSP(frontend0, decrypt));
 
-	const std::string fe1 = StringConverter::stringFormat(FRONTEND.data(), 1, 0);
-	const std::string dvr1 = StringConverter::stringFormat(DVR.data(), 1, 0);
-	const std::string dmx1 = StringConverter::stringFormat(DMX.data(), 1, 0);
-	input::dvb::SpFrontend frontend1 = std::make_shared<input::dvb::Frontend>(1, appDataPath, fe1, dvr1, dmx1);
-	streamVector.push_back(Stream::makeSP(frontend1, decrypt));
-#else
-	dirent **file_list;
-	const int n = scandir(path.data(), &file_list, nullptr, versionsort);
-	if (n > 0) {
-		for (int i = 0; i < n; ++i) {
-			const std::string full_path = StringConverter::stringFormat("@#1/@#2", path, file_list[i]->d_name);
-			struct stat stat_buf;
-			if (stat(full_path.data(), &stat_buf) == 0) {
-				switch (stat_buf.st_mode & S_IFMT) {
-					case S_IFCHR: // character device
-						if (strstr(file_list[i]->d_name, "frontend") != nullptr) {
-							int fe_nr;
-							sscanf(file_list[i]->d_name, "frontend%d", &fe_nr);
-							int adapt_nr;
-							const std::string ADAPTER_TMP = startPath + "/adapter%d";
-							sscanf(path.data(), ADAPTER_TMP.data(), &adapt_nr);
+		const std::string fe1 = StringConverter::stringFormat(FRONTEND.data(), 1, 0);
+		const std::string dvr1 = StringConverter::stringFormat(DVR.data(), 1, 0);
+		const std::string dmx1 = StringConverter::stringFormat(DMX.data(), 1, 0);
+		input::dvb::SpFrontend frontend1 = std::make_shared<input::dvb::Frontend>(1, appDataPath, fe1, dvr1, dmx1);
+		streamVector.push_back(Stream::makeSP(frontend1, decrypt));
+	#else
+		dirent **file_list;
+		const int n = scandir(path.data(), &file_list, nullptr, versionsort);
+		if (n > 0) {
+			for (int i = 0; i < n; ++i) {
+				const std::string full_path = StringConverter::stringFormat("@#1/@#2", path, file_list[i]->d_name);
+				struct stat stat_buf;
+				if (stat(full_path.data(), &stat_buf) == 0) {
+					switch (stat_buf.st_mode & S_IFMT) {
+						case S_IFCHR: // character device
+							if (strstr(file_list[i]->d_name, "frontend") != nullptr) {
+								int fe_nr;
+								sscanf(file_list[i]->d_name, "frontend%d", &fe_nr);
+								int adapt_nr;
+								const std::string ADAPTER_TMP = startPath + "/adapter%d";
+								sscanf(path.data(), ADAPTER_TMP.data(), &adapt_nr);
 
-							// Make new paths
-							const std::string fe = StringConverter::stringFormat(FRONTEND.data(), adapt_nr, fe_nr);
-							const std::string dvr = StringConverter::stringFormat(DVR.data(), adapt_nr, fe_nr);
-							const std::string dmx = StringConverter::stringFormat(DMX.data(), adapt_nr, fe_nr);
+								// Make new paths
+								const std::string fe = StringConverter::stringFormat(FRONTEND.data(), adapt_nr, fe_nr);
+								const std::string dvr = StringConverter::stringFormat(DVR.data(), adapt_nr, fe_nr);
+								const std::string dmx = StringConverter::stringFormat(DMX.data(), adapt_nr, fe_nr);
 
-							// Make new frontend here
-							const StreamSpVector::size_type size = streamVector.size();
-							const input::dvb::SpFrontend frontend = std::make_shared<input::dvb::Frontend>(size, appDataPath, fe, dvr, dmx);
-							streamVector.push_back(Stream::makeSP(frontend, decrypt));
-						}
-						break;
-					case S_IFDIR:
-						// do not use dir '.' an '..'
-						if (strcmp(file_list[i]->d_name, ".") != 0 && strcmp(file_list[i]->d_name, "..") != 0) {
-							getAttachedFrontends(streamVector, appDataPath, decrypt, full_path, startPath);
-						}
-						break;
-					default:
-						// Do nothing here, just find next
-						break;
+								// Make new frontend here
+								const StreamSpVector::size_type size = streamVector.size();
+								const input::dvb::SpFrontend frontend = std::make_shared<input::dvb::Frontend>(size, appDataPath, fe, dvr, dmx);
+								streamVector.push_back(Stream::makeSP(frontend, decrypt));
+							}
+							break;
+						case S_IFDIR:
+							// do not use dir '.' an '..'
+							if (strcmp(file_list[i]->d_name, ".") != 0 && strcmp(file_list[i]->d_name, "..") != 0) {
+								getAttachedFrontends(streamVector, appDataPath, decrypt, full_path, startPath);
+							}
+							break;
+						default:
+							// Do nothing here, just find next
+							break;
+					}
 				}
+				free(file_list[i]);
 			}
-			free(file_list[i]);
 		}
+	#endif
 	}
-#endif
 }
 
 // =============================================================================
@@ -197,6 +199,7 @@ void Frontend::doAddToXML(std::string &xml) const {
 
 	ADD_XML_NUMBER_INPUT(xml, "dvrbuffer", _dvrBufferSizeMB, 0, MAX_DVR_BUFFER_SIZE);
 	ADD_XML_NUMBER_INPUT(xml, "waitOnLockTimeout", _waitOnLockTimeout, 0, MAX_WAIT_ON_LOCK_TIMEOUT);
+	ADD_XML_CHECKBOX(xml, "forceOldStyleStatus", (_oldApiCallStats ? "true" : "false"));
 
 #ifdef LIBDVBCSA
 	_dvbapiData.addToXML(xml);
@@ -222,6 +225,9 @@ void Frontend::doFromXML(const std::string &xml) {
 	if (findXMLElement(xml, "waitOnLockTimeout.value", element)) {
 		const unsigned int c = std::stoi(element);
 		_waitOnLockTimeout = (c < MAX_WAIT_ON_LOCK_TIMEOUT) ? c : MAX_WAIT_ON_LOCK_TIMEOUT;
+	}
+	if (findXMLElement(xml, "forceOldStyleStatus.value", element)) {
+		_oldApiCallStats = (element == "true") ? true : false;
 	}
 	for (std::size_t i = 0; i < _deliverySystem.size(); ++i) {
 		const std::string deliverySystem = StringConverter::stringFormat("deliverySystem@#1", i);
@@ -358,7 +364,7 @@ bool Frontend::monitorSignal(const bool showStatus) {
 					strength = cmdseq.props[0].u.st.stat[0].svalue * 0.0001;
 					break;
 				case FE_SCALE_RELATIVE:
-					strength = cmdseq.props[0].u.st.stat[0].uvalue;
+					strength = (static_cast<uint32_t>(cmdseq.props[0].u.st.stat[0].uvalue) * 100) >> 16;
 					break;
 				case FE_SCALE_NOT_AVAILABLE:
 				default:
@@ -371,7 +377,7 @@ bool Frontend::monitorSignal(const bool showStatus) {
 					snr = cmdseq.props[1].u.st.stat[0].svalue * 0.0001;
 					break;
 				case FE_SCALE_RELATIVE:
-					snr = cmdseq.props[1].u.st.stat[0].uvalue;
+					snr = (static_cast<uint32_t>(cmdseq.props[1].u.st.stat[0].uvalue) * 100) >> 16;
 					break;
 				case FE_SCALE_NOT_AVAILABLE:
 				default:
@@ -387,7 +393,7 @@ bool Frontend::monitorSignal(const bool showStatus) {
 					break;
 				case FE_SCALE_NOT_AVAILABLE:
 				default:
-					_oldApiCallStats = true;
+					ber = 0;
 					break;
 			}
 		}
